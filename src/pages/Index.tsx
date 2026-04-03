@@ -5,9 +5,9 @@ import {
   type Project,
   type ElevatorColumn,
   type Template,
-  TEMPLATES,
   generateId,
 } from "@/lib/elevator-types";
+import { useI18n } from "@/lib/i18n";
 
 const createDefaultProject = (name = "New Project", client = "Client"): Project => ({
   id: generateId(),
@@ -19,6 +19,7 @@ const createDefaultProject = (name = "New Project", client = "Client"): Project 
 });
 
 const Index = () => {
+  const { dir } = useI18n();
   const [projects, setProjects] = useState<Project[]>([
     createDefaultProject("Al Nakheel Tower", "Gulf Properties LLC"),
   ]);
@@ -66,7 +67,7 @@ const Index = () => {
   );
 
   return (
-    <div className="flex h-screen w-full overflow-hidden">
+    <div className="flex h-screen w-full overflow-hidden" dir={dir}>
       <ProjectSidebar
         projects={projects}
         activeProjectId={activeProjectId}
