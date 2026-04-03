@@ -7,6 +7,7 @@ import {
   generateFloorString,
   generateId,
 } from "@/lib/elevator-types";
+import { useI18n } from "@/lib/i18n";
 
 interface SpecGridProps {
   elevators: ElevatorColumn[];
@@ -25,6 +26,7 @@ export function SpecGrid({
 }: SpecGridProps) {
   const [showAttrSearch, setShowAttrSearch] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const { t, lang } = useI18n();
 
   const attrMap = useMemo(() => {
     const map: Record<string, SpecAttribute> = {};
@@ -37,16 +39,18 @@ export function SpecGrid({
     [activeAttributes, attrMap]
   );
 
+  const getAttrLabel = useCallback((id: string) => t(`attr.${id}`), [t]);
+  const getCatLabel = useCallback((cat: string) => t(`cat.${cat}`), [t]);
+
   const availableToAdd = useMemo(
     () =>
       ALL_ATTRIBUTES.filter(
         (a) =>
           !activeAttributes.includes(a.id) &&
-          (a.labelEn.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            a.labelAr.includes(searchTerm) ||
+          (t(`attr.${a.id}`).toLowerCase().includes(searchTerm.toLowerCase()) ||
             a.category.toLowerCase().includes(searchTerm.toLowerCase()))
       ),
-    [activeAttributes, searchTerm]
+    [activeAttributes, searchTerm, t]
   );
 
   const handleSpecChange = useCallback(
@@ -54,15 +58,12 @@ export function SpecGrid({
       const updated = elevators.map((el) => {
         if (el.id !== elevatorId) return el;
         const newSpecs = { ...el.specs, [attrId]: value };
-
-        // Auto-calculate floors_served when stops changes
         if (attrId === "stops") {
           const stops = parseInt(value, 10);
           if (!isNaN(stops) && stops > 0) {
             newSpecs.floors_served = generateFloorString(stops);
           }
         }
-
         return { ...el, specs: newSpecs };
       });
       onUpdateElevators(updated);
@@ -105,11 +106,11 @@ export function SpecGrid({
   );
 
   const handleExport = () => {
-    // Mock export
-    alert("Export to Professional Word document — feature coming soon with Supabase integration.");
+    alert(lang === "ar"
+      ? "تصدير إلى مستند Word احترافي — الميزة قادمة قريباً"
+      : "Export to Professional Word document — feature coming soon.");
   };
 
-  // Group by category
   const categories = useMemo(() => {
     const cats: { name: string; attrs: SpecAttribute[] }[] = [];
     const catMap = new Map<string, SpecAttribute[]>();
@@ -128,7 +129,7 @@ export function SpecGrid({
         <div>
           <h2 className="text-lg font-semibold text-foreground tracking-tight">{projectName}</h2>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {elevators.length} lift{elevators.length !== 1 ? "s" : ""} · {activeAttributes.length} specifications
+            {elevators.length} {elevators.length !== 1 ? t("grid.lifts") : t("grid.lift")} · {activeAttributes.length} {t("grid.specs")}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -137,14 +138,14 @@ export function SpecGrid({
             className="flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-medium bg-secondary text-secondary-foreground hover:bg-accent transition-colors luxury-border"
           >
             <Columns className="w-3.5 h-3.5" />
-            Add Lift
+            {t("grid.addLift")}
           </button>
           <button
             onClick={handleExport}
             className="flex items-center gap-1.5 px-4 py-2 rounded-md text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors luxury-glow"
           >
             <FileDown className="w-3.5 h-3.5" />
-            Export Professional Word
+            {t("grid.exportWord")}
           </button>
         </div>
       </header>
@@ -152,11 +153,10 @@ export function SpecGrid({
       {/* Grid */}
       <div className="flex-1 overflow-auto scrollbar-thin">
         <table className="w-full border-collapse min-w-[600px]">
-          {/* Column Headers */}
           <thead className="sticky top-0 z-10">
             <tr className="bg-card border-b border-border/50">
-              <th className="text-left px-4 py-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground w-56 min-w-[224px]">
-                Specification
+              <th className="text-start px-4 py-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground w-56 min-w-[224px]">
+                {t("grid.specification")}
               </th>
               {elevators.map((el) => (
                 <th key={el.id} className="px-3 py-3 min-w-[160px]">
@@ -188,16 +188,14 @@ export function SpecGrid({
           <tbody>
             {categories.map((cat) => (
               <>
-                {/* Category Header */}
                 <tr key={`cat-${cat.name}`} className="bg-secondary/30">
                   <td
                     colSpan={1 + elevators.length}
                     className="px-4 py-2 text-[10px] font-semibold uppercase tracking-widest text-primary"
                   >
-                    {cat.name}
+                    {getCatLabel(cat.name)}
                   </td>
                 </tr>
-                {/* Attribute Rows */}
                 {cat.attrs.map((attr) => (
                   <tr
                     key={attr.id}
@@ -206,13 +204,10 @@ export function SpecGrid({
                     <td className="px-4 py-2.5">
                       <div className="flex items-center justify-between">
                         <div>
-                          <span className="text-xs font-medium text-foreground">{attr.labelEn}</span>
+                          <span className="text-xs font-medium text-foreground">{getAttrLabel(attr.id)}</span>
                           {attr.unit && (
-                            <span className="text-[10px] text-muted-foreground ml-1">({attr.unit})</span>
+                            <span className="text-[10px] text-muted-foreground ms-1">({attr.unit})</span>
                           )}
-                          <p className="text-[10px] text-muted-foreground/70 font-arabic" dir="rtl">
-                            {attr.labelAr}
-                          </p>
                         </div>
                         <button
                           onClick={() => removeAttribute(attr.id)}
@@ -242,7 +237,7 @@ export function SpecGrid({
           </tbody>
         </table>
 
-        {/* Add Row Button */}
+        {/* Add Row */}
         <div className="px-4 py-3 border-t border-border/20">
           {!showAttrSearch ? (
             <button
@@ -250,7 +245,7 @@ export function SpecGrid({
               className="flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 font-medium transition-colors"
             >
               <Plus className="w-3.5 h-3.5" />
-              Add Specification Row
+              {t("grid.addSpecRow")}
             </button>
           ) : (
             <div className="max-w-md animate-fade-in">
@@ -260,7 +255,7 @@ export function SpecGrid({
                   autoFocus
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Search attributes..."
+                  placeholder={t("grid.searchAttrs")}
                   className="bg-transparent text-xs text-foreground placeholder:text-muted-foreground/50 outline-none flex-1"
                 />
                 <button onClick={() => { setShowAttrSearch(false); setSearchTerm(""); }}>
@@ -272,17 +267,14 @@ export function SpecGrid({
                   <button
                     key={a.id}
                     onClick={() => addAttribute(a.id)}
-                    className="w-full text-left px-3 py-2 rounded-md hover:bg-accent/50 transition-colors flex items-center justify-between"
+                    className="w-full text-start px-3 py-2 rounded-md hover:bg-accent/50 transition-colors flex items-center justify-between"
                   >
-                    <div>
-                      <span className="text-xs text-foreground">{a.labelEn}</span>
-                      <span className="text-[10px] text-muted-foreground ml-2">{a.labelAr}</span>
-                    </div>
-                    <span className="text-[10px] text-muted-foreground">{a.category}</span>
+                    <span className="text-xs text-foreground">{getAttrLabel(a.id)}</span>
+                    <span className="text-[10px] text-muted-foreground">{getCatLabel(a.category)}</span>
                   </button>
                 ))}
                 {availableToAdd.length === 0 && (
-                  <p className="text-xs text-muted-foreground text-center py-3">No more attributes to add</p>
+                  <p className="text-xs text-muted-foreground text-center py-3">{t("grid.noMore")}</p>
                 )}
               </div>
             </div>
