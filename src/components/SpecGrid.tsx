@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import { Plus, Trash2, Search, X, FileDown, Columns, ChevronDown, Lightbulb } from "lucide-react";
 import {
   ALL_ATTRIBUTES,
