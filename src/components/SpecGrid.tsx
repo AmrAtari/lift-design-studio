@@ -1,5 +1,5 @@
-import { useState, useCallback, useMemo } from "react";
-import { Plus, Trash2, Search, X, FileDown, Columns } from "lucide-react";
+import React, { useState, useCallback, useMemo } from "react";
+import { Plus, Trash2, Search, X, FileDown, Columns, ChevronDown, Lightbulb } from "lucide-react";
 import {
   ALL_ATTRIBUTES,
   type SpecAttribute,
@@ -7,6 +7,7 @@ import {
   generateFloorString,
   generateId,
 } from "@/lib/elevator-types";
+import { findMatchingProducts, getAttributeHint } from "@/lib/product-reference";
 import { useI18n } from "@/lib/i18n";
 
 interface SpecGridProps {
@@ -24,8 +25,9 @@ export function SpecGrid({
   onUpdateAttributes,
   projectName,
 }: SpecGridProps) {
-  const [showAttrSearch, setShowAttrSearch] = useState(false);
+  const [sectionSearchOpen, setSectionSearchOpen] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const { t, lang } = useI18n();
 
   const attrMap = useMemo(() => {
@@ -42,6 +44,39 @@ export function SpecGrid({
   const getAttrLabel = useCallback((id: string) => t(`attr.${id}`), [t]);
   const getCatLabel = useCallback((cat: string) => t(`cat.${cat}`), [t]);
 
+  // Compute product hints based on first elevator's shaft/capacity/speed values
+  const productHints = useMemo(() => {
+    if (elevators.length === 0) return [];
+    const specs = elevators[0].specs;
+    const sw = parseInt(specs.shaft_width);
+    const sd = parseInt(specs.shaft_depth);
+    const oh = parseInt(specs.overhead);
+    const pd = parseInt(specs.pit_depth);
+    const cap = parseInt(specs.load);
+    const spd = parseFloat(specs.speed);
+    return findMatchingProducts(
+      isNaN(sw) ? undefined : sw,
+      isNaN(sd) ? undefined : sd,
+      isNaN(oh) ? undefined : oh,
+      isNaN(pd) ? undefined : pd,
+      isNaN(cap) ? undefined : cap,
+      isNaN(spd) ? undefined : spd,
+    );
+  }, [elevators]);
+
+  const availableForSection = useCallback(
+    (category: string) =>
+      ALL_ATTRIBUTES.filter(
+        (a) =>
+          a.category === category &&
+          !activeAttributes.includes(a.id) &&
+          (searchTerm === "" ||
+            t(`attr.${a.id}`).toLowerCase().includes(searchTerm.toLowerCase()))
+      ),
+    [activeAttributes, searchTerm, t]
+  );
+
+  // Global add (all categories)
   const availableToAdd = useMemo(
     () =>
       ALL_ATTRIBUTES.filter(
@@ -92,10 +127,24 @@ export function SpecGrid({
 
   const addAttribute = useCallback(
     (attrId: string) => {
-      onUpdateAttributes([...activeAttributes, attrId]);
+      // Insert after the last attribute of the same category
+      const attr = attrMap[attrId];
+      if (!attr) return;
+      const lastIdx = activeAttributes.reduce((last, id, idx) => {
+        const a = attrMap[id];
+        if (a && a.category === attr.category) return idx;
+        return last;
+      }, -1);
+      if (lastIdx >= 0) {
+        const newAttrs = [...activeAttributes];
+        newAttrs.splice(lastIdx + 1, 0, attrId);
+        onUpdateAttributes(newAttrs);
+      } else {
+        onUpdateAttributes([...activeAttributes, attrId]);
+      }
       setSearchTerm("");
     },
-    [activeAttributes, onUpdateAttributes]
+    [activeAttributes, onUpdateAttributes, attrMap]
   );
 
   const removeAttribute = useCallback(
@@ -104,6 +153,15 @@ export function SpecGrid({
     },
     [activeAttributes, onUpdateAttributes]
   );
+
+  const toggleSection = useCallback((catName: string) => {
+    setCollapsedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(catName)) next.delete(catName);
+      else next.add(catName);
+      return next;
+    });
+  }, []);
 
   const handleExport = () => {
     alert(lang === "ar"
@@ -122,6 +180,55 @@ export function SpecGrid({
     return cats;
   }, [activeAttrObjects]);
 
+  const renderInput = (attr: SpecAttribute, el: ElevatorColumn) => {
+    const value = el.specs[attr.id] || "";
+    const isReadOnly = attr.id === "floors_served";
+    const hint = getAttributeHint(attr.id, productHints, lang);
+
+    if (attr.options && attr.options.length > 0) {
+      return (
+        <div>
+          <select
+            value={value}
+            onChange={(e) => handleSpecChange(el.id, attr.id, e.target.value)}
+            className="w-full bg-secondary/50 border border-border/30 rounded-md px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/50 transition-all appearance-none cursor-pointer"
+          >
+            <option value="">{t("grid.selectOption")}</option>
+            {attr.options.map((opt) => (
+              <option key={opt} value={opt}>{opt}</option>
+            ))}
+          </select>
+          {hint && (
+            <div className="flex items-center gap-1 mt-0.5">
+              <Lightbulb className="w-2.5 h-2.5 text-primary/70 flex-shrink-0" />
+              <span className="text-[9px] text-primary/70 truncate">{hint}</span>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div>
+        <input
+          value={value}
+          onChange={(e) => handleSpecChange(el.id, attr.id, e.target.value)}
+          placeholder="—"
+          readOnly={isReadOnly}
+          className={`w-full bg-secondary/50 border border-border/30 rounded-md px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/50 transition-all ${
+            isReadOnly ? "bg-accent/50 cursor-default" : ""
+          }`}
+        />
+        {hint && (
+          <div className="flex items-center gap-1 mt-0.5">
+            <Lightbulb className="w-2.5 h-2.5 text-primary/70 flex-shrink-0" />
+            <span className="text-[9px] text-primary/70 truncate">{hint}</span>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="flex-1 flex flex-col h-screen overflow-hidden">
       {/* Header */}
@@ -130,6 +237,11 @@ export function SpecGrid({
           <h2 className="text-lg font-semibold text-foreground tracking-tight">{projectName}</h2>
           <p className="text-xs text-muted-foreground mt-0.5">
             {elevators.length} {elevators.length !== 1 ? t("grid.lifts") : t("grid.lift")} · {activeAttributes.length} {t("grid.specs")}
+            {productHints.length > 0 && (
+              <span className="text-primary ms-2">
+                · {productHints.length} {lang === "ar" ? "منتج متوافق" : "matching products"}
+              </span>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -159,7 +271,7 @@ export function SpecGrid({
                 {t("grid.specification")}
               </th>
               {elevators.map((el) => (
-                <th key={el.id} className="px-3 py-3 min-w-[160px]">
+                <th key={el.id} className="px-3 py-3 min-w-[180px]">
                   <div className="flex items-center justify-between">
                     <input
                       value={el.name}
@@ -186,62 +298,120 @@ export function SpecGrid({
           </thead>
 
           <tbody>
-            {categories.map((cat) => (
-              <>
-                <tr key={`cat-${cat.name}`} className="bg-secondary/30">
-                  <td
-                    colSpan={1 + elevators.length}
-                    className="px-4 py-2 text-[10px] font-semibold uppercase tracking-widest text-primary"
-                  >
-                    {getCatLabel(cat.name)}
-                  </td>
-                </tr>
-                {cat.attrs.map((attr) => (
-                  <tr
-                    key={attr.id}
-                    className="group border-b border-border/20 hover:bg-accent/30 transition-colors"
-                  >
-                    <td className="px-4 py-2.5">
+            {categories.map((cat) => {
+              const isCollapsed = collapsedSections.has(cat.name);
+              const sectionAvailable = availableForSection(cat.name);
+              const isSectionSearchOpen = sectionSearchOpen === cat.name;
+
+              return (
+                <React.Fragment key={`cat-${cat.name}`}>
+                  {/* Category Header */}
+                  <tr className="bg-secondary/30 cursor-pointer select-none" onClick={() => toggleSection(cat.name)}>
+                    <td
+                      colSpan={1 + elevators.length}
+                      className="px-4 py-2"
+                    >
                       <div className="flex items-center justify-between">
-                        <div>
-                          <span className="text-xs font-medium text-foreground">{getAttrLabel(attr.id)}</span>
-                          {attr.unit && (
-                            <span className="text-[10px] text-muted-foreground ms-1">({attr.unit})</span>
+                        <span className="text-[10px] font-semibold uppercase tracking-widest text-primary">
+                          {getCatLabel(cat.name)}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          {sectionAvailable.length > 0 && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSectionSearchOpen(isSectionSearchOpen ? null : cat.name);
+                                setSearchTerm("");
+                              }}
+                              className="text-muted-foreground hover:text-primary transition-colors p-0.5"
+                              title={t("grid.addToSection")}
+                            >
+                              <Plus className="w-3 h-3" />
+                            </button>
                           )}
+                          <ChevronDown className={`w-3 h-3 text-muted-foreground transition-transform ${isCollapsed ? (lang === "ar" ? "rotate-90" : "-rotate-90") : ""}`} />
                         </div>
-                        <button
-                          onClick={() => removeAttribute(attr.id)}
-                          className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all p-1"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
                       </div>
                     </td>
-                    {elevators.map((el) => (
-                      <td key={el.id} className="px-3 py-2.5">
-                        <input
-                          value={el.specs[attr.id] || ""}
-                          onChange={(e) => handleSpecChange(el.id, attr.id, e.target.value)}
-                          placeholder="—"
-                          readOnly={attr.id === "floors_served"}
-                          className={`w-full bg-secondary/50 border border-border/30 rounded-md px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/50 transition-all ${
-                            attr.id === "floors_served" ? "bg-accent/50 cursor-default" : ""
-                          }`}
-                        />
-                      </td>
-                    ))}
                   </tr>
-                ))}
-              </>
-            ))}
+
+                  {/* Section Search */}
+                  {isSectionSearchOpen && !isCollapsed && (
+                    <tr>
+                      <td colSpan={1 + elevators.length} className="px-4 py-2">
+                        <div className="max-w-md animate-fade-in">
+                          <div className="flex items-center gap-2 bg-secondary/50 border border-border/30 rounded-md px-3 py-1.5 mb-1.5">
+                            <Search className="w-3 h-3 text-muted-foreground" />
+                            <input
+                              autoFocus
+                              value={searchTerm}
+                              onChange={(e) => setSearchTerm(e.target.value)}
+                              placeholder={t("grid.searchAttrs")}
+                              className="bg-transparent text-xs text-foreground placeholder:text-muted-foreground/50 outline-none flex-1"
+                            />
+                            <button onClick={() => { setSectionSearchOpen(null); setSearchTerm(""); }}>
+                              <X className="w-3 h-3 text-muted-foreground hover:text-foreground" />
+                            </button>
+                          </div>
+                          <div className="max-h-36 overflow-y-auto scrollbar-thin space-y-0.5">
+                            {sectionAvailable.map((a) => (
+                              <button
+                                key={a.id}
+                                onClick={() => { addAttribute(a.id); }}
+                                className="w-full text-start px-3 py-1.5 rounded-md hover:bg-accent/50 transition-colors"
+                              >
+                                <span className="text-xs text-foreground">{getAttrLabel(a.id)}</span>
+                              </button>
+                            ))}
+                            {sectionAvailable.length === 0 && (
+                              <p className="text-xs text-muted-foreground text-center py-2">{t("grid.noMore")}</p>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+
+                  {/* Attributes */}
+                  {!isCollapsed && cat.attrs.map((attr) => (
+                    <tr
+                      key={attr.id}
+                      className="group border-b border-border/20 hover:bg-accent/30 transition-colors"
+                    >
+                      <td className="px-4 py-2">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <span className="text-xs font-medium text-foreground">{getAttrLabel(attr.id)}</span>
+                            {attr.unit && (
+                              <span className="text-[10px] text-muted-foreground ms-1">({attr.unit})</span>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => removeAttribute(attr.id)}
+                            className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all p-1"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </td>
+                      {elevators.map((el) => (
+                        <td key={el.id} className="px-3 py-2">
+                          {renderInput(attr, el)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </React.Fragment>
+              );
+            })}
           </tbody>
         </table>
 
-        {/* Add Row */}
+        {/* Global Add Row */}
         <div className="px-4 py-3 border-t border-border/20">
-          {!showAttrSearch ? (
+          {sectionSearchOpen !== "__global" ? (
             <button
-              onClick={() => setShowAttrSearch(true)}
+              onClick={() => { setSectionSearchOpen("__global"); setSearchTerm(""); }}
               className="flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 font-medium transition-colors"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -258,7 +428,7 @@ export function SpecGrid({
                   placeholder={t("grid.searchAttrs")}
                   className="bg-transparent text-xs text-foreground placeholder:text-muted-foreground/50 outline-none flex-1"
                 />
-                <button onClick={() => { setShowAttrSearch(false); setSearchTerm(""); }}>
+                <button onClick={() => { setSectionSearchOpen(null); setSearchTerm(""); }}>
                   <X className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" />
                 </button>
               </div>
